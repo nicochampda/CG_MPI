@@ -10,6 +10,7 @@
 
 void matVectMult(double *A, double *p, int hei, int len, double *result);
 double vectDotVect(double *v1, double *v2, int len);
+double *vectSum(double *u, double c, double *v, int len);
 void Prvalues(int len, int hei,  double matrix[len * hei]);
 
 int main(int argc, char *argv[]){
@@ -20,7 +21,7 @@ int main(int argc, char *argv[]){
 
     double *A, *x;
     double *A_rows, *z, *r, *p;
-    double alpha, gamma, gamma_new, beta;
+    double alpha, gamma, gamma_new, beta, p_z_loc;
 
     if (argc != 2){
         printf("usage : mpirun -np nprocs ./conjgrad mat_size");
@@ -73,15 +74,21 @@ int main(int argc, char *argv[]){
     memcpy(p, r, mat_size*sizeof(double));
 
     MPI_Wait(&init_recv, MPI_STATUS_IGNORE);
-
+    
+    gamma = vectDotVect(r, r, mat_size);
 
     for(int n = 0; n<nIter; n++){
         /* Compute z=A*p */
         matVectMult(A_rows, p, block_size, mat_size, z);
+
         /* compute alpha and allreduce */
-
+        p_z_loc = vectDotVect(&p[rank * block_size], z, block_size);
+        MPI_Allreduce(&p_z_loc, &alpha, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        alpha = gamma / alpha;
+        
         /* compute x, r */
-
+        x = vectSum(x, alpha, &p[rank * block_size], block_size);
+        r = vectSum(r, -alpha, z, block_size);
         /* compute gamma and all reduce */
 
         /* check for exiting loop */
@@ -96,7 +103,8 @@ int main(int argc, char *argv[]){
     Prvalues(1, mat_size, r);
     Prvalues(mat_size, block_size, A_rows);
     Prvalues(1, block_size, z);
-
+    printf("alpha : %f\n", alpha);
+    Prvalues(1, block_size, x);
 
     MPI_Finalize();
 
@@ -118,6 +126,14 @@ double vectDotVect(double *v1, double *v2, int len){
     return result;
 }    
     
+double *vectSum(double *u, double c, double *v, int len){
+    for (int i=0; i<len; i++){
+        u[i] = u[i] + c * v[i];
+    }
+    return u;
+}
+
+
 void Prvalues(int len, int hei,  double matrix[len * hei]){   
     int i, j;
     printf("\n");
