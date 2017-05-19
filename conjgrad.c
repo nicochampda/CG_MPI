@@ -21,7 +21,7 @@ int main(int argc, char *argv[]){
 
     double *A, *x;
     double *A_rows, *z, *r, *p;
-    double alpha, gamma, gamma_new, beta, p_z_loc;
+    double alpha, gamma, gamma_new, gamma_loc, beta, p_z_loc;
 
     if (argc != 2){
         printf("usage : mpirun -np nprocs ./conjgrad mat_size");
@@ -38,14 +38,14 @@ int main(int argc, char *argv[]){
     MPI_Request init_recv;
     
     int block_size = mat_size/nprocs;
-    r = (double *)malloc(mat_size * sizeof(double));
+    p = (double *)malloc(mat_size * sizeof(double));
 
     if(rank == 0){
         /* Initialization of A, b, and x */
         A = (double *)malloc(mat_size * mat_size * sizeof(double));
 
         for (i=0; i<mat_size; i++){
-            r[i] = i;
+            p[i] = i;
             for (j=0; j<mat_size; j++){
                 A[i*mat_size + j] = i + j;
             }
@@ -61,17 +61,17 @@ int main(int argc, char *argv[]){
 
     
     /* Last part of initialization */
-    MPI_Bcast(r, mat_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(p, mat_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     A_rows = (double *)malloc(block_size*mat_size*sizeof(double));
 
     MPI_Irecv(A_rows, block_size*mat_size, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, &init_recv);
 
-    p = (double *)malloc(mat_size*sizeof(double));
+    r = (double *)malloc(block_size*sizeof(double));
     x = (double *)malloc(block_size*sizeof(double));
     z = (double *)malloc(block_size*sizeof(double));
 
     memset(x, 0, block_size * sizeof(double));
-    memcpy(p, r, mat_size*sizeof(double));
+    memcpy(r, &p[rank * block_size], block_size*sizeof(double));
 
     MPI_Wait(&init_recv, MPI_STATUS_IGNORE);
     
@@ -89,22 +89,30 @@ int main(int argc, char *argv[]){
         /* compute x, r */
         x = vectSum(x, alpha, &p[rank * block_size], block_size);
         r = vectSum(r, -alpha, z, block_size);
+        
         /* compute gamma and all reduce */
+        gamma_loc = vectDotVect(r, r, block_size);
+        MPI_Allreduce(&gamma_loc, &gamma_new, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
         /* check for exiting loop */
 
         /* compute beta in each procs */
+        beta = gamma_new / gamma;
+        gamma = gamma_new;
 
         /* compute p and allgather */
+        
+
     } 
     
     sleep(rank);
     printf("rank %i\n", rank);
-    Prvalues(1, mat_size, r);
+    Prvalues(1, block_size, r);
     Prvalues(mat_size, block_size, A_rows);
     Prvalues(1, block_size, z);
     printf("alpha : %f\n", alpha);
     Prvalues(1, block_size, x);
+    printf("gamma : %f\n", gamma_new);
 
     MPI_Finalize();
 
