@@ -8,3 +8,4 @@ conjgrad: conjgrad.c
 clean:
 	$(RM) conjgrad
 	$(RM) core.*
+	$(RM) vgcore.*
