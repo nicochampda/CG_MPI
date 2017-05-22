@@ -10,17 +10,18 @@
 
 void matVectMult(double *A, double *p, int hei, int len, double *result);
 double vectDotVect(double *v1, double *v2, int len);
-double *vectSum(double *u, double c, double *v, int len);
+void vectSum(double *u, double c, double *v, int len, double *result);
 void Prvalues(int len, int hei,  double matrix[len * hei]);
 
 int main(int argc, char *argv[]){
     int nprocs, rank;
-    int nIter = 1;
+    int nIter = 10;
+    double max_error = 0.00001;
     int mat_size;
     int i, j, k;
 
     double *A, *x;
-    double *A_rows, *z, *r, *p;
+    double *A_rows, *z, *r, *p, *p_loc;
     double alpha, gamma, gamma_new, gamma_loc, beta, p_z_loc;
 
     if (argc != 2){
@@ -45,9 +46,14 @@ int main(int argc, char *argv[]){
         A = (double *)malloc(mat_size * mat_size * sizeof(double));
 
         for (i=0; i<mat_size; i++){
-            p[i] = i;
+            p[i] = i + 1;
             for (j=0; j<mat_size; j++){
-                A[i*mat_size + j] = i + j;
+                if(i==j){
+                    A[i*mat_size + j] = 0;
+                }
+                else{
+                    A[i*mat_size + j] = i + j +1;
+                }
             }
         
         }
@@ -69,13 +75,14 @@ int main(int argc, char *argv[]){
     r = (double *)malloc(block_size*sizeof(double));
     x = (double *)malloc(block_size*sizeof(double));
     z = (double *)malloc(block_size*sizeof(double));
+    p_loc = (double *)malloc(block_size*sizeof(double));
 
     memset(x, 0, block_size * sizeof(double));
     memcpy(r, &p[rank * block_size], block_size*sizeof(double));
 
     MPI_Wait(&init_recv, MPI_STATUS_IGNORE);
     
-    gamma = vectDotVect(r, r, mat_size);
+    gamma = vectDotVect(p, p, mat_size);
 
     for(int n = 0; n<nIter; n++){
         /* Compute z=A*p */
@@ -87,32 +94,39 @@ int main(int argc, char *argv[]){
         alpha = gamma / alpha;
         
         /* compute x, r */
-        x = vectSum(x, alpha, &p[rank * block_size], block_size);
-        r = vectSum(r, -alpha, z, block_size);
+        vectSum(x, alpha, &p[rank * block_size], block_size, x);
+        vectSum(r, -alpha, z, block_size, r);
         
         /* compute gamma and all reduce */
         gamma_loc = vectDotVect(r, r, block_size);
         MPI_Allreduce(&gamma_loc, &gamma_new, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
         /* check for exiting loop */
-
+        if (gamma_new < max_error){
+            break;
+        }
+        //printf("gamma %f\n", gamma_new);
         /* compute beta in each procs */
         beta = gamma_new / gamma;
         gamma = gamma_new;
 
         /* compute p and allgather */
-        
+        vectSum(r, beta, &p[rank*block_size], block_size, p_loc);
+        MPI_Allgather(p_loc, block_size, MPI_DOUBLE, p, block_size, MPI_DOUBLE, MPI_COMM_WORLD);
+
 
     } 
     
     sleep(rank);
     printf("rank %i\n", rank);
-    Prvalues(1, block_size, r);
-    Prvalues(mat_size, block_size, A_rows);
-    Prvalues(1, block_size, z);
+    //Prvalues(1, block_size, r);
+    //Prvalues(mat_size, block_size, A_rows);
+    //Prvalues(1, block_size, z);
     printf("alpha : %f\n", alpha);
     Prvalues(1, block_size, x);
-    printf("gamma : %f\n", gamma_new);
+    //printf("gamma : %f\n", gamma_new);
+    //Prvalues(1, block_size, p_loc);
+    //Prvalues(1, mat_size, p);
 
     MPI_Finalize();
 
@@ -134,11 +148,10 @@ double vectDotVect(double *v1, double *v2, int len){
     return result;
 }    
     
-double *vectSum(double *u, double c, double *v, int len){
+void vectSum(double *u, double c, double *v, int len, double *result){
     for (int i=0; i<len; i++){
-        u[i] = u[i] + c * v[i];
+        result[i] = u[i] + c * v[i];
     }
-    return u;
 }
 
 
