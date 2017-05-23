@@ -7,7 +7,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-
+void initialize(double *A, double *b, int mat_size);
 void matVectMult(double *A, double *p, int hei, int len, double *result);
 double vectDotVect(double *v1, double *v2, int len);
 void vectSum(double *u, double c, double *v, int len, double *result);
@@ -18,7 +18,6 @@ int main(int argc, char *argv[]){
     int nIter = 10;
     double max_error = 0.00001;
     int mat_size;
-    int i, j, k;
 
     double *A, *x;
     double *A_rows, *z, *r, *p, *p_loc;
@@ -44,22 +43,15 @@ int main(int argc, char *argv[]){
     if(rank == 0){
         /* Initialization of A, b, and x */
         A = (double *)malloc(mat_size * mat_size * sizeof(double));
-
-        for (i=0; i<mat_size; i++){
-            p[i] = i + 1;
-            for (j=0; j<mat_size; j++){
-                if(i==j){
-                    A[i*mat_size + j] = 0;
-                }
-                else{
-                    A[i*mat_size + j] = i + j +1;
-                }
-            }
+        initialize(A, p, mat_size);
         
-        }
+        Prvalues(mat_size, mat_size, A);
+        Prvalues(1, mat_size, p);
+
+
         /*Scatter input datas over MPI_COMM_WORLD */
         
-        for (k=0; k<nprocs; k++){
+        for (int k=0; k<nprocs; k++){
             MPI_Isend(&A[k*block_size*mat_size], block_size*mat_size, MPI_DOUBLE, k, 1, MPI_COMM_WORLD, &init_send[k]);
         }
         MPI_Waitall(nprocs, init_send, MPI_STATUSES_IGNORE);
@@ -122,7 +114,7 @@ int main(int argc, char *argv[]){
     //Prvalues(1, block_size, r);
     //Prvalues(mat_size, block_size, A_rows);
     //Prvalues(1, block_size, z);
-    printf("alpha : %f\n", alpha);
+    //printf("alpha : %f\n", alpha);
     Prvalues(1, block_size, x);
     //printf("gamma : %f\n", gamma_new);
     //Prvalues(1, block_size, p_loc);
@@ -133,6 +125,25 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
+void initialize(double *A, double *b, int mat_size){
+    double A_loc[mat_size*mat_size];
+    for (int i=0; i<mat_size; i++){
+        b[i] = rand()/(double) RAND_MAX;
+        for (int j=0; j<mat_size; j++){
+            A_loc[i*mat_size + j] = rand()/(double) RAND_MAX;
+        }
+        
+    }
+    for (int i=0; i<mat_size; i++){
+        for(int j=0; j<mat_size; j++){
+            for(int k=0; k<mat_size;k++){
+                A[i*mat_size + j] += A_loc[i*mat_size + k] * A_loc[j*mat_size + k];
+            }
+        }
+    }
+
+
+}
 
 void matVectMult(double *mat, double *v, int hei, int len, double *result){
     for(int i=0; i<hei; i++){
