@@ -1,5 +1,5 @@
 CC=mpicc
-CFLAGS=-Wall -O3 -g
+CFLAGS=-O3
 LIBS= -lmpi
 
 conjgrad: conjgrad.c
